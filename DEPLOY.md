@@ -1,149 +1,97 @@
 # Deploying to Cloudways
 
-Read this once before starting. It takes about 30 minutes. Steps 1 to 4 are
-Cloudways clicking, steps 5 to 8 are terminal work.
+The app runs live 24/7 with the web interface and the send worker as two
+background services. No terminals stay open.
+
+**This is safe to do before the OVH mail server exists.** With no SMTP details
+configured the worker starts in sink mode: it claims, renders and records
+messages but physically cannot deliver anything. When OVH is ready you add three
+lines to `.env` and restart one service.
+
+Doing it in this order is deliberate: deploying gives you the Cloudways outbound
+IP, which the OVH firewall rule needs.
 
 ---
 
 ## 1. Create the application
 
-In the Cloudways panel:
+Cloudways panel:
 
 - **Add Application** on your existing server
 - Application: **Custom App**
 - Name: `azkal-email`
-- Once created, note the **Application folder name** (something like `abcdefghij`)
+- Note the application folder name it gives you
 
-Your app path will be:
+Your path will be:
 
     /home/master/applications/<APP_FOLDER>/public_html
 
+Then **Application Settings → Node.js version → 22**.
+
 ---
 
-## 2. Add PostgreSQL
+## 2. The database question
 
-Cloudways servers ship with MySQL, not Postgres, so add it yourself.
+Cloudways ships MySQL, not PostgreSQL. Two options.
 
-Open **Server → Settings & Packages** and check whether PostgreSQL is offered.
-If it is, install it there. If it is not, SSH in as master and run:
+**A: install PostgreSQL on the server.** Works on most Cloudways plans.
 
     sudo apt update
     sudo apt install -y postgresql postgresql-contrib
 
-Then create the database and user:
+The setup script in step 3 will then create the database and user for you.
 
-    sudo -u postgres psql
+**B: use a managed PostgreSQL.** If Cloudways will not let you install it, or
+you would rather not maintain it, both neon.tech and supabase.com have free
+tiers that handle 38,000 rows without trouble. Create a database, copy the
+connection string, and paste it into `.env` as `DATABASE_URL`.
 
-    CREATE DATABASE azkal_email;
-    CREATE USER azkal WITH ENCRYPTED PASSWORD 'PUT_A_LONG_RANDOM_PASSWORD_HERE';
-    GRANT ALL PRIVILEGES ON DATABASE azkal_email TO azkal;
-    \c azkal_email
-    GRANT ALL ON SCHEMA public TO azkal;
-    ALTER DATABASE azkal_email OWNER TO azkal;
-    CREATE EXTENSION IF NOT EXISTS pg_trgm;
-    \q
+Option B also gives you managed backups, which is worth something given this
+database is the only record of who you have contacted.
 
-Write that password down. You need it in step 5.
-
-> If Cloudways will not let you install Postgres on the server, tell me and I
-> will switch the app to a managed Postgres (Neon or Supabase have free tiers
-> that comfortably handle 44k rows). It is a one-line change to `DATABASE_URL`.
+Either works. The application does not care.
 
 ---
 
-## 3. Point the domain
+## 3. Upload and run the setup script
 
-**Application → Domain Management**, add:
+Upload the project via SFTP to `public_html`, or from your Mac:
 
-    email.azkalmedia.com
+    cd ~/Documents
+    scp -r azkal-email/* master@YOUR_SERVER_IP:/home/master/applications/<APP_FOLDER>/public_html/
 
-Then in your DNS, add an A record for `email` pointing at the Cloudways server IP.
+Do not copy `node_modules`, `.next` or `.env`. Those are rebuilt on the server.
 
-Once it resolves, go to **Application → SSL Certificate**, pick Let's Encrypt,
-and enable **Force HTTPS**.
+Then SSH in:
 
----
-
-## 4. Node version
-
-**Application → Settings → Node.js version**: set to **22**.
-
----
-
-## 5. Upload the code
-
-SSH into the server as the master user, then:
-
+    ssh master@YOUR_SERVER_IP
     cd /home/master/applications/<APP_FOLDER>/public_html
-    rm -rf *
+    bash server-setup.sh
 
-Upload `azkal-email.zip` (via SFTP, or `scp` from your Mac), then:
+It checks Node, sets up the database, writes `.env` with a fresh session secret,
+installs dependencies, builds, applies the schema and safety triggers, installs
+PM2, and starts both services.
 
-    unzip azkal-email.zip
-    mv azkal-email/* azkal-email/.[!.]* . 2>/dev/null
-    rmdir azkal-email
-    rm azkal-email.zip
+At the end it prints **the server outbound IP**. Write that down. It goes in the
+OVH firewall rule.
 
-You should now see `package.json` in the current directory.
+Then create your login:
 
----
-
-## 6. Environment and install
-
-Create the environment file:
-
-    cp .env.example .env
-    nano .env
-
-Fill in exactly these two, leave the SMTP block empty for now:
-
-    DATABASE_URL=postgres://azkal:THE_PASSWORD_FROM_STEP_2@127.0.0.1:5432/azkal_email
-    SESSION_SECRET=
-
-For the session secret, run this and paste the output:
-
-    openssl rand -base64 48
-
-Save with Ctrl+O, Enter, Ctrl+X.
-
-Then install and build:
-
-    npm install
-    npm run db:migrate
     npm run admin:create
-    npm run build
-
-`db:migrate` applies the schema and then the safety triggers. You should see
-two files applied and `All migrations applied.`
-
-`admin:create` will prompt for your email and a password. Minimum 12 characters.
 
 ---
 
-## 7. Keep it running
+## 4. Point the domain at the app
 
-Install PM2 and start the app under it:
+Cloudways serves through Nginx, which does not know about your Node process
+yet.
 
-    npm install -g pm2
-    pm2 start npm --name azkal-email -- start
-    pm2 save
-    pm2 startup
+In your DNS, add an A record for `email` on `azkalmedia.com` pointing at the
+Cloudways server IP. Then in the panel add `email.azkalmedia.com` under **Domain
+Management**, and enable **Let's Encrypt SSL** with **Force HTTPS**.
 
-The last command prints a `sudo` line. Copy it, run it, and PM2 will restart the
-app automatically if the server reboots.
-
-Check it is alive:
-
-    pm2 status
-    curl -I http://127.0.0.1:3000
-
----
-
-## 8. Route the domain to port 3000
-
-Cloudways serves from Apache/Nginx by default, which will not know about your
-Node process. In **Application → Application Settings → Nginx / Apache**, or via
-`/etc/nginx/sites-available/<APP_FOLDER>`, add a proxy block:
+Then add the proxy. In **Application Settings → Nginx**, or by editing
+`/etc/nginx/sites-available/<APP_FOLDER>`:
 
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -157,80 +105,126 @@ Node process. In **Application → Application Settings → Nginx / Apache**, or
         client_max_body_size 60M;
     }
 
-The `client_max_body_size` matters. Without it, a 34,000 row CSV upload is
-rejected by Nginx before it ever reaches the application.
-
-Reload:
+`client_max_body_size` matters. Without it a 34,000 row CSV upload is rejected
+by Nginx before it ever reaches the app.
 
     sudo service nginx reload
 
 ---
 
-## 9. Open it
+## 5. Check it
 
-Go to **https://email.azkalmedia.com**, sign in with the account from step 6.
+Open **https://email.azkalmedia.com** and sign in.
 
-You will land on an empty dashboard. That is correct. Go to **Import**, pick
-**Brokers**, and upload the brokers CSV.
+    pm2 status
+
+Both `azkal-web` and `azkal-worker` should show `online`.
+
+    pm2 logs azkal-worker --lines 20
+
+You should see the worker announce sink mode:
+
+    Transport  local sink (writes files, sends nothing)
+    NOTE       Nothing will actually be delivered.
+
+That is correct until OVH exists.
 
 ---
 
-## Backups
+## 6. Backups
 
-Set this up on day one. This database becomes the only record of who you have
-contacted.
+Do this on day one. This database is the only record of who you have contacted.
 
     mkdir -p /home/master/backups
     crontab -e
 
 Add:
 
-    0 3 * * * pg_dump -U azkal azkal_email | gzip > /home/master/backups/azkal_$(date +\%Y\%m\%d).sql.gz
+    0 3 * * * pg_dump "$DATABASE_URL" | gzip > /home/master/backups/azkal_$(date +\%Y\%m\%d).sql.gz
     0 4 * * * find /home/master/backups -name "azkal_*.sql.gz" -mtime +14 -delete
 
-Then pull a copy down to your Mac weekly:
+Then pull a copy to your Mac weekly:
 
     scp master@YOUR_SERVER_IP:/home/master/backups/azkal_*.sql.gz ~/Dropbox/azkal-backups/
+
+If you chose managed PostgreSQL in step 2, backups are handled for you.
+
+---
+
+## 7. Later: connecting the mail server
+
+Once the OVH VPS passes verification, add three lines to `.env`:
+
+    SMTP_HOST=mail.azkalmedia.agency
+    SMTP_USER=azkalsend
+    SMTP_PASS=<from /root/azkal-credentials.txt on the OVH box>
+
+Set the warmup start date:
+
+    psql "$DATABASE_URL" -c "UPDATE system_settings SET value = to_jsonb(CURRENT_DATE::text) WHERE key = 'warmup_started_on';"
+
+Then:
+
+    pm2 restart azkal-worker
+    pm2 logs azkal-worker
+
+The worker will now announce:
+
+    Transport  Postfix at mail.azkalmedia.agency:587
+    WARNING    This sends real email.
+
+Nothing else changes. Same code, same queue, same safety rules.
+
+---
+
+## Everyday commands
+
+    pm2 status                    what is running
+    pm2 logs azkal-worker         watch it send
+    pm2 restart azkal-worker      after changing .env or settings
+    pm2 stop azkal-worker         halt sending, site stays up
+    pm2 restart all               after deploying new code
+
+Stopping the worker is the emergency brake. The site keeps working, campaigns
+keep their state, nothing sends.
 
 ---
 
 ## Updating later
 
     cd /home/master/applications/<APP_FOLDER>/public_html
-    # upload the new files
+    # upload changed files
     npm install
-    npm run db:migrate
+    npx tsx scripts/migrate.ts
     npm run build
-    pm2 restart azkal-email
+    pm2 restart all
 
 ---
 
 ## If something goes wrong
 
-**App will not start**
+**Site will not load**
 
-    pm2 logs azkal-email --lines 50
+    pm2 logs azkal-web --lines 50
 
 Usually a missing environment variable. The app fails loudly rather than
 starting broken.
 
-**"The database is not reachable" on the dashboard**
+**Worker keeps restarting**
 
-Check Postgres is running and the credentials are right:
+    pm2 logs azkal-worker --err --lines 50
 
-    sudo service postgresql status
-    psql "$DATABASE_URL" -c "SELECT 1"
+**502 from Nginx**
 
-**CSV upload fails at around 10MB**
+The app is not running, or the proxy block in step 4 is missing.
 
-The `client_max_body_size` from step 8 is missing or Nginx was not reloaded.
+    pm2 status
+    curl -I http://127.0.0.1:3000
 
-**Import runs but Arabic names look like question marks**
+**CSV upload fails around 10MB**
 
-Tell me the file and I will adjust the encoding detection. The importer already
-falls back to Windows-1256, but registry exports vary.
+`client_max_body_size` is missing or Nginx was not reloaded.
 
-**Migration says a relation already exists**
+**Cannot install PostgreSQL**
 
-The schema was applied twice. Safe to ignore if the guards file applied cleanly
-afterwards. If not, drop and recreate the database and rerun `db:migrate`.
+Go with option B in step 2. It is a one-line change to `DATABASE_URL`.
