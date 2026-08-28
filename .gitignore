@@ -4,3 +4,5 @@ node_modules
 .env.local
 *.log
 /uploads
+tsconfig.tsbuildinfo
+.htaccess
