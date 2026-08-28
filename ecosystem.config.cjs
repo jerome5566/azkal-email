@@ -24,7 +24,7 @@ module.exports = {
       instances: 1,
       autorestart: true,
       max_memory_restart: "600M",
-      env: { NODE_ENV: "production", PORT: 3000 },
+      env: { NODE_ENV: "production", PORT: 3001 },
       error_file: "./logs/web-error.log",
       out_file: "./logs/web-out.log",
       time: true,
