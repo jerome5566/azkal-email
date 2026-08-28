@@ -1,0 +1,83 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-page text-ink font-sans;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-page;
+  }
+  /* Arabic name columns render right-to-left inside an LTR table */
+  [dir="rtl"] {
+    unicode-bidi: isolate;
+  }
+}
+
+@layer components {
+  .surface {
+    @apply bg-card border border-line rounded-card shadow-card;
+  }
+  .page-title {
+    @apply text-display text-ink;
+  }
+  .page-sub {
+    @apply text-[15px] text-ink-muted mt-1;
+  }
+  .label {
+    @apply text-[13px] font-medium text-ink-soft;
+  }
+  .input {
+    @apply w-full h-10 px-3 rounded-control border border-line bg-card text-[14px]
+           placeholder:text-ink-faint focus:border-accent focus:ring-0;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 h-10 px-4 rounded-control
+           text-[14px] font-medium transition-colors disabled:opacity-50
+           disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-white hover:bg-accent-hover;
+  }
+  .btn-quiet {
+    @apply btn bg-card border border-line text-ink-soft hover:bg-page;
+  }
+  .btn-danger {
+    @apply btn bg-card border border-line text-bad hover:bg-red-50 hover:border-red-200;
+  }
+  .btn-sm {
+    @apply h-8 px-3 text-[13px];
+  }
+  .pill {
+    @apply inline-flex items-center h-[22px] px-2.5 rounded-full text-[12px]
+           font-medium whitespace-nowrap;
+  }
+  .th {
+    @apply text-left text-[12px] font-semibold uppercase tracking-wide
+           text-ink-faint px-4 py-3 border-b border-line bg-page/60;
+  }
+  .td {
+    @apply px-4 py-3 text-[14px] text-ink-soft border-b border-line align-middle;
+  }
+}
+
+/* Recharts tooltip trimmed to match the card language */
+.recharts-default-tooltip {
+  border-radius: 8px !important;
+  border: 1px solid #e9ebef !important;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.1) !important;
+  font-size: 13px !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
