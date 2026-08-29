@@ -2,7 +2,6 @@
  * PM2 process configuration.
  *
  * Runs the web app and the send worker as two managed background services.
- * This is what replaces the two terminal windows you use locally.
  *
  *   pm2 start ecosystem.config.cjs
  *   pm2 save
@@ -31,10 +30,18 @@ module.exports = {
     },
     {
       name: "azkal-worker",
-      script: "npx",
-      args: "tsx scripts/worker.ts",
+      // Point straight at the tsx binary rather than going through npx.
+      // npx spawns a child process, and PM2 only captures output from the
+      // process it launched directly, so the worker's log was going nowhere.
+      script: "./node_modules/.bin/tsx",
+      args: "scripts/worker.ts",
       cwd: __dirname,
-      instances: 1,
+      // Fork, not cluster. Cluster mode exists to run several copies of a web
+      // server across CPU cores. Several copies of a send worker would be
+      // several processes claiming from the same queue. Note that setting
+      // "instances" at all is what pushes PM2 into cluster mode, so it is
+      // deliberately absent here.
+      exec_mode: "fork",
       autorestart: true,
       // Deliberately slow restart. If the worker is crash-looping, something is
       // wrong and hammering the database or a mail server makes it worse.
