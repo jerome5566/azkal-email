@@ -113,13 +113,20 @@ export function renderMessage(
   const unsubMailto =
     `mailto:${sender.unsubscribeAddress}?subject=unsubscribe%20${opts.unsubToken}`;
 
+  // One-click HTTPS unsubscribe, RFC 8058. Gmail and Yahoo both prefer this to
+  // mailto, and the recipient gets an instant confirmation rather than silence.
+  // Read from the environment rather than passed in, so no call site changes.
+  const appUrl = (process.env.PUBLIC_APP_URL ?? "").replace(/\/+$/, "");
+  const unsubUrl = appUrl ? `${appUrl}/u/${opts.unsubToken}` : "";
+  const unsubHref = unsubUrl || unsubMailto;
+
   // Plain, small, no images. A designed footer on a cold email is a signal.
   const footerHtml = `
 <div style="margin-top:28px;padding-top:14px;border-top:1px solid #e4e4e4;
             font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;
             font-size:12px;line-height:1.5;color:#888;">
   ${escapeHtml(sender.postalAddress)}<br>
-  Do not want these emails? <a href="${unsubMailto}" style="color:#888;">Unsubscribe</a>,
+  Do not want these emails? <a href="${unsubHref}" style="color:#888;">Unsubscribe</a>,
   or just reply with the word REMOVE.
 </div>`.trim();
 
@@ -127,7 +134,9 @@ export function renderMessage(
     "",
     "---",
     sender.postalAddress,
-    `To unsubscribe, reply with the word REMOVE or email ${sender.unsubscribeAddress}`,
+    unsubUrl
+      ? `To unsubscribe: ${unsubUrl}`
+      : `To unsubscribe, reply with the word REMOVE or email ${sender.unsubscribeAddress}`,
   ].join("\n");
 
   return {
@@ -137,7 +146,12 @@ export function renderMessage(
     headers: {
       // RFC 2369. Gmail, Outlook and Apple Mail all render this as a native
       // unsubscribe control at the top of the message.
-      "List-Unsubscribe": `<${unsubMailto}>`,
+      // Both forms listed. Clients that support one-click use the https one,
+      // everything else falls back to mailto.
+      "List-Unsubscribe": unsubUrl
+        ? `<${unsubUrl}>, <${unsubMailto}>`
+        : `<${unsubMailto}>`,
+      ...(unsubUrl ? { "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } : {}),
       "Auto-Submitted": "auto-generated",
       "Precedence": "bulk",
     },
