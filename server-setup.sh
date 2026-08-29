@@ -130,7 +130,7 @@ ok "Build complete"
 # ---------------------------------------------------------------------------
 step "5. Database schema"
 # ---------------------------------------------------------------------------
-set -a; source .env; set +a
+# set -a; source .env; set +a
 
 if psql "$DATABASE_URL" -c "SELECT 1 FROM email_identities LIMIT 1" >/dev/null 2>&1; then
   COUNT=$(psql "$DATABASE_URL" -tAc "SELECT COUNT(*) FROM email_identities")
