@@ -28,12 +28,16 @@ module.exports = {
     },
     {
       name: "azkal-worker",
-      // Run node directly and load tsx as a loader, rather than pointing PM2
-      // at the tsx binary. PM2's fork mode tries to require() the script it is
-      // given, and the tsx CLI is an ES module, which require() cannot load.
-      // Going through node sidesteps that entirely.
-      script: "node",
-      args: "--import tsx scripts/worker.ts",
+      // tsx is the interpreter, the .ts file is the script. PM2 then simply
+      // runs "tsx scripts/worker.ts", which is what works by hand.
+      //
+      // Two things this avoids. Pointing PM2 at the tsx binary as the script
+      // fails, because fork mode require()s the script and the tsx CLI is an
+      // ES module. Running "node --import tsx" fails too, because the node on
+      // this server's PATH is 20.5.1 and --import needs 20.6 or newer.
+      // Letting tsx be the interpreter sidesteps both.
+      script: "scripts/worker.ts",
+      interpreter: "./node_modules/.bin/tsx",
       cwd: __dirname,
       // Fork, not cluster. Cluster mode exists to run several copies of a web
       // server across CPU cores. Several copies of a send worker would be
