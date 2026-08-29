@@ -1,8 +1,6 @@
 /**
  * PM2 process configuration.
  *
- * Runs the web app and the send worker as two managed background services.
- *
  *   pm2 start ecosystem.config.cjs
  *   pm2 save
  *   pm2 startup          <- survives a server reboot
@@ -30,17 +28,17 @@ module.exports = {
     },
     {
       name: "azkal-worker",
-      // Point straight at the tsx binary rather than going through npx.
-      // npx spawns a child process, and PM2 only captures output from the
-      // process it launched directly, so the worker's log was going nowhere.
-      script: "./node_modules/.bin/tsx",
-      args: "scripts/worker.ts",
+      // Run node directly and load tsx as a loader, rather than pointing PM2
+      // at the tsx binary. PM2's fork mode tries to require() the script it is
+      // given, and the tsx CLI is an ES module, which require() cannot load.
+      // Going through node sidesteps that entirely.
+      script: "node",
+      args: "--import tsx scripts/worker.ts",
       cwd: __dirname,
       // Fork, not cluster. Cluster mode exists to run several copies of a web
       // server across CPU cores. Several copies of a send worker would be
-      // several processes claiming from the same queue. Note that setting
-      // "instances" at all is what pushes PM2 into cluster mode, so it is
-      // deliberately absent here.
+      // several processes claiming from the same queue. Setting "instances" at
+      // all is what pushes PM2 into cluster mode, so it is deliberately absent.
       exec_mode: "fork",
       autorestart: true,
       // Deliberately slow restart. If the worker is crash-looping, something is
